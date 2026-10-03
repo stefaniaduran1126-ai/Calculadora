@@ -1,0 +1,110 @@
+from datetime import datetime
+from enum import Enum
+from typing import List, Optional
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Enum as SQLEnum
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+
+# --- CONFIGURACIÓN DE BASE DE DATOS ---
+DATABASE_URL = "sqlite:///./dental_workflow.db"
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# --- ENUMERACIONES ---
+class EstadoOrden(str, Enum):
+    SOLICITUD_CREADA = "solicitud_creada"
+    EN_CAMINO = "en_camino"
+    RECIBIDO_EN_LABORATORIO = "recibido_en_laboratorio"
+    EN_PRODUCCION = "en_produccion"
+    CONTROL_DE_CALIDAD = "control_de_calidad"
+    LISTO_PARA_ENVIO = "listo_para_envio"
+    ENTREGADO = "entregado"
+
+class TipoProtesis(str, Enum):
+    CORONA_ZIRCONIO = "corona_zirconio"
+    CARILLA_PORCELANA = "carilla_porcelana"
+    PROTESIS_TOTAL = "protesis_total"
+    FERULA_DESCANSO = "ferula_descanso"
+
+# --- MODELO ORM (DATABASE) ---
+class OrdenTrabajoDB(Base):
+    __tablename__ = "ordenes_trabajo"
+
+    id = Column(Integer, primary_key=True, index=True)
+    paciente_nombre = Column(String, nullable=False)
+    clinica_id = Column(String, nullable=False)
+    laboratorio_id = Column(String, nullable=False)
+    tipo_protesis = Column(SQLEnum(TipoProtesis), nullable=False)
+    color_guia = Column(String, nullable=False) # Ej: A2, B1
+    observaciones = Column(String, nullable=True)
+    archivo_stl_url = Column(String, nullable=True)
+    estado = Column(SQLEnum(EstadoOrden), default=EstadoOrden.SOLICITUD_CREADA)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    fecha_actualizacion = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+Base.metadata.create_all(bind=engine)
+
+# --- ESQUEMAS PYDANTIC (VALIDACIÓN) ---
+class OrdenCreate(BaseModel):
+    paciente_nombre: str
+    clinica_id: str
+    laboratorio_id: str
+    tipo_protesis: TipoProtesis
+    color_guia: str
+    observaciones: Optional[str] = None
+    archivo_stl_url: Optional[str] = None
+
+class OrdenUpdateEstado(BaseModel.Config if hasattr(BaseModel, 'Config') else object):
+    pass
+
+class OrdenResponse(OrdenCreate):
+    id: int
+    estado: EstadoOrden
+    fecha_creacion: datetime
+    fecha_actualizacion: datetime
+
+    class Config:
+        from_attributes = True
+
+# --- DEPENDENCIAS ---
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# --- APLICACIÓN FASTAPI ---
+app = FastAPI(
+    title="API de Línea de Producción Clínica-Laboratorio Dental",
+    version="1.0.0"
+)
+
+@app.post("/ordenes/", response_model=OrdenResponse)
+def crear_orden(orden: OrdenCreate, db: Session = Depends(get_db)):
+    """Crea una nueva solicitud de trabajo protésico desde la clínica."""
+    db_orden = OrdenTrabajoDB(**orden.dict(), estado=EstadoOrden.SOLICITUD_CREADA)
+    db.add(db_orden)
+    db.commit()
+    db.refresh(db_orden)
+    return db_orden
+
+@app.get("/ordenes/", response_model=List[OrdenResponse])
+def listar_ordenes(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """Lista todas las órdenes activas en el flujo de producción."""
+    return db.query(OrdenTrabajoDB).offset(skip).limit(limit).all()
+
+@app.patch("/ordenes/{orden_id}/estado", response_model=OrdenResponse)
+def actualizar_estado(orden_id: int, nuevo_estado: EstadoOrden, db: Session = Depends(get_db)):
+    """Actualiza el estado del flujo de trabajo (usado por el laboratorio o clínica)."""
+    db_orden = db.query(OrdenTrabajoDB).filter(OrdenTrabajoDB.id == orden_id).first()
+    if not db_orden:
+        raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada.")
+    
+    db_orden.estado = nuevo_estado
+    db.commit()
+    db.refresh(db_orden)
+    return db_orden
