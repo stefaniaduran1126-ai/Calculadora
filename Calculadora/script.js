@@ -16,6 +16,12 @@ function operaciones(operador) {
             case "*": resultado.textContent = Number(nro1.value) * Number(nro2.value); break;
             case "/": resultado.textContent = Number(nro1.value) / Number(nro2.value); break;
             case "clear": limpiar(); break;
+            default: resultado.textContent = "Operador no valido"; break;
+            function limpiar() {
+                nro1.value = "";
+                nro2.value = "";
+                resultado.textContent = "Resultado:";
+            }
         }
     }
 }
