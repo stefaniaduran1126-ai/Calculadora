@@ -19,19 +19,19 @@
                 <input type="number" id="nro2" name="nro2" placeholder="0">
             </div>
             <div class="calculadora_btns">
-                <input type="button" value="+">
-                <input type="button" value="-">
-                <input type="button" value="*">
-                <input type="button" value="/">
-                <input type="button" value="Clear">  
-                
+                <input type="button" value="+" onclick="operaciones('+')">
+                <input type="button" value="-" onclick="operaciones('-')">
+                <input type="button" value="*" onclick="operaciones('*')">
+                <input type="button" value="/" onclick="operaciones('/')">
+                <input type="button" value="Clear" onclick="operaciones('clear')">
             </div>
             <div class="calculadora_resultado">
-                <label for="resultado">Resultado:</label>
-                <input type="text" id="resultado" name="resultado" placeholder="0" readonly>
+                <label for="resultado" id ="resultado" >Resultado:</label>
+                <!-- <input type="text" id="resultado" name="resultado" placeholder="0" > -->
         </div>
     </div>
 </main>
+<script src="script.js"></script>
 
 </body>
 </html>
